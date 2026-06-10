@@ -276,7 +276,7 @@ async function syncTickets(){
       }
     }
     if(!folder)throw new Error('Could not find folder "'+FOLDER+'" in your Outlook.');
-    var msgs=[],url='https://graph.microsoft.com/v1.0/me/mailFolders/'+folder.id+'/messages?$top=50&$select=subject,receivedDateTime,from,bodyPreview&$orderby=receivedDateTime desc';
+    var msgs=[],url='https://graph.microsoft.com/v1.0/me/mailFolders/'+folder.id+'/messages?$top=50&$select=subject,receivedDateTime,from,bodyPreview&$orderby=receivedDateTime asc';
     while(url){
       var r=await fetch(url,{headers:{Authorization:'Bearer '+token}});
       var d=await r.json();
@@ -323,17 +323,23 @@ function processMessages(msgs){
     var subject=(msg.subject||'').replace(/^(Re:|Fw:|Fwd:|\[LF-\d+\])\s*/gi,'').trim();
     if(!seen[id]){
       var saved=getSaved(id);
+      // First email = original issue description, reporter, and date
       seen[id]={id,subject,date,reporter,category:guessCat(subject,preview),
         status:(saved&&saved.status)||guessStat(subject,preview),
         description:preview.slice(0,300)+(preview.length>300?'…':''),
-        resolution:(saved&&saved.resolution)||'',notes:(saved&&saved.notes)||'',isNew:!saved};
-    } else if(!getSaved(id)&&guessStat(msg.subject||'',preview)==='resolved'){seen[id].status='resolved';}
+        resolution:(saved&&saved.resolution)||'',notes:(saved&&saved.notes)||'',isNew:!saved,
+        latestDate:date};
+    } else {
+      // Update latest date and status from newer emails
+      seen[id].latestDate = date;
+      if(!getSaved(id)&&guessStat(msg.subject||'',preview)==='resolved'){seen[id].status='resolved';}
+    }
   });
   Object.values(seen).forEach(function(t){
     var ex=TICKETS.find(function(e){return e.id===t.id;});
     if(!ex)TICKETS.push(t);else if(!ex.description)ex.description=t.description;
   });
-  TICKETS.sort(function(a,b){return a.date<b.date?1:-1;});
+  TICKETS.sort(function(a,b){return (a.latestDate||a.date)<(b.latestDate||b.date)?1:-1;});
   saveAll();
 }
 
